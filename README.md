@@ -1,6 +1,6 @@
 このリポジトリは AWS Deep Cuts の、AWS Local Zones に関するハンズオンコンテンツです。
 
-AWS Local Zonesの解説記事(Qiita)は[こちら]()
+AWS Local Zonesの解説記事(Qiita)は[こちら](https://qiita.com/kenken38/items/d27e5d543d051bcffc8f)
 
 > ⚠️ **コストに関する注意**
 >
@@ -119,7 +119,7 @@ aws ec2 describe-availability-zones \
    - **ファイアウォール（セキュリティグループ）**: 「既存のセキュリティグループを選択する」→ setup.sh で作成した SG を選択
 
 7. **ストレージ**
-   - `8 GiB`、`gp2`（デフォルトのまま）
+   - `8 GiB`、`gp2`
 
 8. **高度な詳細** を展開し、一番下の **ユーザーデータ** 欄に以下を貼り付け
 
@@ -242,7 +242,15 @@ systemctl enable --now aws-deepcuts-web.service
 - `aws-deepcuts-lz-local` の IP → 以降 `<LOCAL_IP>` と表記
 - `aws-deepcuts-lz-regional` の IP → 以降 `<REGIONAL_IP>` と表記
 
-EC2 の user data が完了するまで 1〜2 分かかります。`http://<IP>/ping` にアクセスして `ok` と表示されれば準備完了です。
+EC2 の user data が完了するまで 1〜2 分かかります。
+
+以下のコマンドを実行します。
+```
+curl http://<LOCAL_IP>/ping
+curl http://<REGIONAL_IP>/ping
+
+# ok と表示されれば EC2 の作成は完了です。
+```
 
 ### 測定ページへのアクセス
 
@@ -251,6 +259,8 @@ Local Zone の EC2 上に測定ページがデプロイされます。以下の 
 ```
 http://<LOCAL_IP>/?local=http://<LOCAL_IP>/ping&regional=http://<REGIONAL_IP>/ping
 ```
+
+![ブラウザ画面](img\browser.png)
 
 ## ３．結果の確認
 
@@ -261,17 +271,11 @@ http://<LOCAL_IP>/?local=http://<LOCAL_IP>/ping&regional=http://<REGIONAL_IP>/pi
 | ホノルル → Local Zone EC2 | ホノルル市内のみ | 1桁ミリ秒 程度 |
 | ホノルル → us-west-2 EC2 | ホノルル → オレゴン | Local Zone より**遅い** |
 
-詳細はサービス解説記事の[aaa]()を参照してください。
+詳細はサービス解説記事の[本ハンズオンでのレイテンシ測定について](https://qiita.com/kenken38/items/d27e5d543d051bcffc8f#%E6%9C%AC%E3%83%8F%E3%83%B3%E3%82%BA%E3%82%AA%E3%83%B3%E3%81%A7%E3%81%AE%E3%83%AC%E3%82%A4%E3%83%86%E3%83%B3%E3%82%B7%E6%B8%AC%E5%AE%9A%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6)を参照してください。
 
 ### 測定結果例
+![測定結果例](img\result.png)
 
-ハワイ（ホノルル）で測定した結果：
-
-<!-- TODO: 実測結果のスクリーンショットを添付 -->
-
-東京で測定した結果：
-
-<!-- TODO: 実測結果のスクリーンショットを添付 -->
 
 ## ４．後片付け
 
