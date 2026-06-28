@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RESOURCE_FILE="${SCRIPT_DIR}/resource-ids.env"
 REGION="us-west-2"
-PROJECT_TAG="aws-deepcuts"
+PROJECT_NAME="aws-deepcuts"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  AWS Deep Cuts - Local Zone クリーンアップ"
@@ -19,10 +19,11 @@ fi
 
 source "${RESOURCE_FILE}"
 
-# EC2 インスタンスを検索して終了
+# EC2 インスタンスを終了（手動作成のためNameタグで検索）
 echo "[1/5] EC2 インスタンスを終了..."
 INSTANCE_IDS=$(aws ec2 describe-instances \
-  --filters "Name=tag:Project,Values=${PROJECT_TAG}" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+  --filters "Name=tag:Name,Values=${PROJECT_NAME}-lz-local,${PROJECT_NAME}-lz-regional" \
+            "Name=instance-state-name,Values=pending,running,stopping,stopped" \
   --region "${REGION}" \
   --query 'Reservations[].Instances[].InstanceId' \
   --output text)
@@ -62,6 +63,15 @@ if [ -n "${IGW_ID:-}" ]; then
   echo "  IGW 削除: ${IGW_ID}"
 fi
 if [ -n "${RTB_ID:-}" ]; then
+  # ルートテーブルのサブネットアソシエーションを解除
+  ASSOC_IDS=$(aws ec2 describe-route-tables \
+    --route-table-ids "${RTB_ID}" \
+    --region "${REGION}" \
+    --query 'RouteTables[].Associations[?!Main].RouteTableAssociationId' \
+    --output text 2>/dev/null || true)
+  for ASSOC_ID in ${ASSOC_IDS}; do
+    aws ec2 disassociate-route-table --association-id "${ASSOC_ID}" --region "${REGION}" 2>/dev/null || true
+  done
   aws ec2 delete-route-table --route-table-id "${RTB_ID}" --region "${REGION}" 2>/dev/null || true
   echo "  Route Table 削除: ${RTB_ID}"
 fi
