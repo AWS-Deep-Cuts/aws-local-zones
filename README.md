@@ -260,7 +260,7 @@ Local Zone の EC2 上に測定ページがデプロイされます。以下の 
 http://<LOCAL_IP>/?local=http://<LOCAL_IP>/ping&regional=http://<REGIONAL_IP>/ping
 ```
 
-![ブラウザ画面](img\browser.png)
+![ブラウザ画面](img/browser.png)
 
 ## ３．結果の確認
 
@@ -274,7 +274,7 @@ http://<LOCAL_IP>/?local=http://<LOCAL_IP>/ping&regional=http://<REGIONAL_IP>/pi
 詳細はサービス解説記事の[本ハンズオンでのレイテンシ測定について](https://qiita.com/kenken38/items/d27e5d543d051bcffc8f#%E6%9C%AC%E3%83%8F%E3%83%B3%E3%82%BA%E3%82%AA%E3%83%B3%E3%81%A7%E3%81%AE%E3%83%AC%E3%82%A4%E3%83%86%E3%83%B3%E3%82%B7%E6%B8%AC%E5%AE%9A%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6)を参照してください。
 
 ### 測定結果例
-![測定結果例](img\result.png)
+![測定結果例](img/result.png)
 
 
 ## ４．後片付け
