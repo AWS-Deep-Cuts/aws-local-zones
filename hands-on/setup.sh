@@ -10,10 +10,59 @@ REGIONAL_SUBNET_CIDR="10.42.2.0/24"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RESOURCE_FILE="${SCRIPT_DIR}/resource-ids.env"
 
+# AWS 認証チェック (CloudShell / IAM Identity Center / aws login / アクセスキー に対応)
+source "${SCRIPT_DIR}/aws_auth_check.sh"
+# プロファイルにリージョンが無い場合 (Identity Center のプロファイルなど) でも動くように固定
+export AWS_REGION="${REGION}" AWS_DEFAULT_REGION="${REGION}"
+
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  AWS Deep Cuts - Local Zone セットアップ"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
+
+aws_auth_check "${REGION}" || exit 1
+
+# 前回の setup.sh のリソース情報が残っている場合は、VPC の二重作成を防ぐため停止
+if [ -f "${RESOURCE_FILE}" ]; then
+  echo "エラー: 前回の setup.sh のリソース情報 (${RESOURCE_FILE}) が残っています。"
+  echo "作成済みのリソースを削除する場合は bash ./cleanup.sh を実行してから、再度 setup.sh を実行してください。"
+  exit 1
+fi
+
+# 作成したリソースの ID を、作成するたびに保存する
+# (途中で失敗しても cleanup.sh で作成済みの分を削除できるようにするため)
+VPC_ID="" IGW_ID="" RTB_ID="" LOCAL_SUBNET_ID="" REGIONAL_SUBNET_ID="" SG_ID=""
+LOCAL_ZONE_NAME="" REGIONAL_AZ=""
+save_resources() {
+  cat > "${RESOURCE_FILE}" <<EOF
+# AWS Deep Cuts Local Zone - リソース情報
+# このファイルは setup.sh が自動生成しました
+SETUP_AWS_PROFILE="${AWS_PROFILE:-default}"
+ACCOUNT_ID="${AWS_ACCOUNT_ID}"
+REGION="${REGION}"
+VPC_ID="${VPC_ID}"
+IGW_ID="${IGW_ID}"
+RTB_ID="${RTB_ID}"
+LOCAL_SUBNET_ID="${LOCAL_SUBNET_ID}"
+REGIONAL_SUBNET_ID="${REGIONAL_SUBNET_ID}"
+SECURITY_GROUP_ID="${SG_ID}"
+LOCAL_ZONE_NAME="${LOCAL_ZONE_NAME}"
+REGIONAL_AZ="${REGIONAL_AZ}"
+EOF
+}
+
+on_error() {
+  local line="$1"
+  echo ""
+  echo "❌ エラーが発生したため、セットアップを中断しました (setup.sh ${line} 行目)。"
+  echo "   上に表示されている AWS CLI のエラーメッセージを確認してください。"
+  aws_permission_hint
+  if [ -f "${RESOURCE_FILE}" ]; then
+    echo ""
+    echo "   作成途中のリソースは bash ./cleanup.sh で削除できます。"
+  fi
+}
+trap 'on_error ${LINENO}' ERR
 
 # Local Zone オプトイン確認・有効化
 echo "[1/6] Local Zone のオプトイン状態を確認..."
@@ -41,7 +90,8 @@ if [ "${OPT_IN_STATUS}" != "opted-in" ]; then
     sleep 10
   done
   if [ "${OPT_IN_STATUS}" != "opted-in" ]; then
-    echo "エラー: Local Zone のオプトインが完了しませんでした。"
+    echo "エラー: Local Zone のオプトインが完了しませんでした (現在: ${OPT_IN_STATUS})。"
+    echo "数分待ってから再度 setup.sh を実行してください。"
     exit 1
   fi
 fi
@@ -69,6 +119,7 @@ VPC_ID=$(aws ec2 create-vpc \
   --cidr-block "${VPC_CIDR}" \
   --region "${REGION}" \
   --query 'Vpc.VpcId' --output text)
+save_resources
 aws ec2 create-tags --resources "${VPC_ID}" \
   --tags "Key=Name,Value=${PROJECT_NAME}-lz-vpc" "Key=Project,Value=${PROJECT_NAME}" \
   --region "${REGION}"
@@ -82,6 +133,7 @@ echo "[3/6] Internet Gateway を作成..."
 IGW_ID=$(aws ec2 create-internet-gateway \
   --region "${REGION}" \
   --query 'InternetGateway.InternetGatewayId' --output text)
+save_resources
 aws ec2 attach-internet-gateway --internet-gateway-id "${IGW_ID}" --vpc-id "${VPC_ID}" --region "${REGION}"
 aws ec2 create-tags --resources "${IGW_ID}" \
   --tags "Key=Name,Value=${PROJECT_NAME}-lz-igw" "Key=Project,Value=${PROJECT_NAME}" \
@@ -89,6 +141,7 @@ aws ec2 create-tags --resources "${IGW_ID}" \
 
 RTB_ID=$(aws ec2 create-route-table --vpc-id "${VPC_ID}" --region "${REGION}" \
   --query 'RouteTable.RouteTableId' --output text)
+save_resources
 aws ec2 create-route --route-table-id "${RTB_ID}" \
   --destination-cidr-block 0.0.0.0/0 --gateway-id "${IGW_ID}" --region "${REGION}" >/dev/null
 aws ec2 create-tags --resources "${RTB_ID}" \
@@ -104,6 +157,7 @@ LOCAL_SUBNET_ID=$(aws ec2 create-subnet \
   --vpc-id "${VPC_ID}" --cidr-block "${LOCAL_SUBNET_CIDR}" \
   --availability-zone "${LOCAL_ZONE_NAME}" --region "${REGION}" \
   --query 'Subnet.SubnetId' --output text)
+save_resources
 aws ec2 modify-subnet-attribute --subnet-id "${LOCAL_SUBNET_ID}" --map-public-ip-on-launch --region "${REGION}"
 aws ec2 associate-route-table --route-table-id "${RTB_ID}" --subnet-id "${LOCAL_SUBNET_ID}" --region "${REGION}" >/dev/null
 
@@ -111,6 +165,7 @@ REGIONAL_SUBNET_ID=$(aws ec2 create-subnet \
   --vpc-id "${VPC_ID}" --cidr-block "${REGIONAL_SUBNET_CIDR}" \
   --availability-zone "${REGIONAL_AZ}" --region "${REGION}" \
   --query 'Subnet.SubnetId' --output text)
+save_resources
 aws ec2 modify-subnet-attribute --subnet-id "${REGIONAL_SUBNET_ID}" --map-public-ip-on-launch --region "${REGION}"
 aws ec2 associate-route-table --route-table-id "${RTB_ID}" --subnet-id "${REGIONAL_SUBNET_ID}" --region "${REGION}" >/dev/null
 
@@ -129,6 +184,7 @@ SG_ID=$(aws ec2 create-security-group \
   --description "HTTP access for Local Zone latency test" \
   --vpc-id "${VPC_ID}" --region "${REGION}" \
   --query 'GroupId' --output text)
+save_resources
 aws ec2 authorize-security-group-ingress \
   --group-id "${SG_ID}" \
   --ip-permissions 'IpProtocol=tcp,FromPort=80,ToPort=80,IpRanges=[{CidrIp=0.0.0.0/0}]' \
@@ -216,19 +272,8 @@ echo "  user-data.sh を生成しました"
 echo ""
 
 # リソース情報を保存
-cat > "${RESOURCE_FILE}" <<EOF
-# AWS Deep Cuts Local Zone - リソース情報
-# このファイルは setup.sh が自動生成しました
-REGION="${REGION}"
-VPC_ID="${VPC_ID}"
-IGW_ID="${IGW_ID}"
-RTB_ID="${RTB_ID}"
-LOCAL_SUBNET_ID="${LOCAL_SUBNET_ID}"
-REGIONAL_SUBNET_ID="${REGIONAL_SUBNET_ID}"
-SECURITY_GROUP_ID="${SG_ID}"
-LOCAL_ZONE_NAME="${LOCAL_ZONE_NAME}"
-REGIONAL_AZ="${REGIONAL_AZ}"
-EOF
+save_resources
+trap - ERR
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "✅ セットアップが完了しました！"

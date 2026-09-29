@@ -30,6 +30,21 @@ AWS Deep Cutsは、AWS の最新のサービスやニッチな機能、または
 
 以降の手順は、ハンズオン用に用意した AWS アカウントで実施してください。
 
+
+### 認証について
+
+スクリプトは [CloudShell](https://docs.aws.amazon.com/cloudshell/latest/userguide/welcome.html) での実行を推奨します。CloudShell はマネジメントコンソールのサインイン情報をそのまま使うため、**IAM Identity Center (AWS SSO) 経由でサインインしている場合も追加設定なしで動作します**。
+
+ローカル PC から実行する場合は、AWS CLI v2 で以下のいずれかを設定してから実行してください。
+
+| 認証方式 | 事前に実行するコマンド |
+| -- | -- |
+| IAM Identity Center (AWS SSO) | `aws configure sso` → `aws sso login --profile <プロファイル名>` → `export AWS_PROFILE=<プロファイル名>` |
+| `aws login`（コンソールの認証情報でサインイン） | `aws login` |
+| IAM ユーザーのアクセスキー | `aws configure` |
+
+スクリプトは最初に認証を確認し、失敗した場合は **原因（SSO セッション切れ・プロファイル名の誤り・一時キーの期限切れなど）と対処コマンド** を表示して停止します。成功すると、どのアカウント・どのユーザー/ロールで実行するかが表示されるので、意図したアカウントか確認してください。
+
 ## 構築するアーキテクチャ
 
 ```mermaid
@@ -293,3 +308,14 @@ bash ./cleanup.sh
 cd ../..
 sudo rm -rf aws-local-zones
 ```
+
+# トラブルシューティング
+
+| 表示・症状 | 主な原因 | 対処 |
+| -- | -- | -- |
+| IAM Identity Center (SSO) のセッションが切れているか... | SSO のアクセストークン失効 | `aws sso login --profile <プロファイル名>` |
+| AWS の認証情報が見つかりません | ローカルで認証未設定 / `AWS_PROFILE` 未設定 | 上記「認証について」を参照 |
+| 前回の setup.sh のリソース情報が残っています | setup.sh の再実行 | `bash ./cleanup.sh` を実行してから再度 setup.sh |
+| UnauthorizedOperation（EC2） | 許可セット・IAM ポリシーの権限不足（Local Zone のオプトインには `ec2:ModifyAvailabilityZoneGroup` が必要） | EC2 の権限を付与。setup.sh は途中まで作成したリソースを記録しているので、`bash ./cleanup.sh` で削除可能 |
+| VPC を削除できませんでした | EC2 の終了待ち・ENI などの依存リソース | 数分待ってから再度 `bash ./cleanup.sh` |
+| setup.sh 実行したアカウント と 現在の認証情報のアカウント が異なります | cleanup.sh を別プロファイルで実行 | setup.sh 実行時と同じ `AWS_PROFILE` で実行 |
